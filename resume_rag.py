@@ -31,14 +31,12 @@ if 'metrics' not in st.session_state:
         'total_screenings': 0,
         'avg_processing_time': 0,
         'total_candidates_ranked': 0,
-        'cache_hit_rate': 0,
         'total_api_calls': 0,
-        'cost_saved': 0,
         'processing_times': [],
         'hourly_throughput': 0
     }
 
-def update_metrics(num_resumes, processing_time, cache_hits=0, total_items=1):
+def update_metrics(num_resumes, processing_time, total_items=1):
     """Update performance metrics"""
     m = st.session_state.metrics
     m['total_resumes_processed'] += num_resumes
@@ -57,15 +55,6 @@ def update_metrics(num_resumes, processing_time, cache_hits=0, total_items=1):
         m['hourly_throughput'] = int(resumes_per_second * 3600)
     
 
-# ============================
-# TITLE WITH METRICS BANNER
-# ============================
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("📄 Resumes Processed", st.session_state.metrics['total_resumes_processed'])
-with col2:
-    st.metric("⚡ Avg Time", f"{st.session_state.metrics['avg_processing_time']:.1f}s")
-    
 
 st.title("📊 AI-Powered Resume Screening System")
 st.caption("Powered by RAG + Groq AI | 10x faster than manual screening")
@@ -128,13 +117,10 @@ def get_file_hash(file_bytes):
     """Generate unique hash for file content"""
     return hashlib.md5(file_bytes).hexdigest()
 
-cache_stats = {'hits': 0, 'misses': 0}
-
 
 @st.cache_data(ttl=3600)
 def parse_resume_cached(file_hash, file_bytes, filename):
     """Cache parsed resume by file hash"""
-    cache_stats['misses'] += 1
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(file_bytes)
@@ -162,7 +148,6 @@ def parse_resume_cached(file_hash, file_bytes, filename):
 @st.cache_data(ttl=3600)
 def embed_text_cached(text):
     """Cache embeddings by text content"""
-    cache_stats['misses'] += 1
     return embedder.encode([text], show_progress_bar=False)[0].tolist()
 
 # ============================
@@ -244,7 +229,7 @@ def verify_technical_context(text):
 def analyze_with_groq_cached(jd_hash, candidates_json):
     """Cache LLM responses"""
     if not groq_client:
-        return "⚠️ Groq API not configured"
+        return " Groq API not configured"
     
     try:
         st.session_state.metrics['total_api_calls'] += 1
@@ -282,7 +267,7 @@ Be brief and actionable."""
         
     except Exception as e:
         log_error("Groq API failed", e)
-        return f"⚠️ Error: {str(e)}"
+        return f" Error: {str(e)}"
 
 def analyze_candidates(jd_text, ranked_resumes):
     """Wrapper for cached LLM analysis"""
@@ -328,29 +313,21 @@ with st.sidebar.expander("📈 System Performance"):
     st.metric("Candidates Ranked", st.session_state.metrics['total_candidates_ranked'])
     st.metric("Throughput", f"{st.session_state.metrics['hourly_throughput']} resumes/hr")
     st.metric("API Calls", st.session_state.metrics['total_api_calls'])
+    st.metric("Avg TIme", st.session_state.metrics['avg_processing_time'])
+    st.metric("Total Resume Processed", st.session_state.metrics['total_resumes_processed'])
     
-    if st.button("🔄 Reset Metrics"):
+    if st.button("Reset Metrics"):
         st.session_state.metrics = {
             'total_resumes_processed': 0,
             'total_screenings': 0,
             'avg_processing_time': 0,
             'total_candidates_ranked': 0,
-            'cache_hit_rate': 0,
             'total_api_calls': 0,
-            'cost_saved': 0,
             'processing_times': [],
             'hourly_throughput': 0
         }
         st.rerun()
 
-# Cache Management
-with st.sidebar.expander("💾 Cache Management"):
-    st.info("Auto-expires: 1 hour")
-    if st.button("🗑️ Clear Caches"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.success("✅ Cleared!")
-        st.rerun()
 
 # Main UI
 uploaded_files = st.file_uploader(
@@ -375,11 +352,11 @@ with col2:
 
 if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
     if not uploaded_files or not jd_text.strip():
-        st.warning("⚠️ Upload resumes and add job description")
+        st.warning(" Upload resumes and add job description")
         st.stop()
     
     if not GROQ_API_KEY:
-        st.error("⚠️ Add GROQ_API_KEY to .env")
+        st.error(" Add GROQ_API_KEY to .env")
         st.stop()
     
     try:
@@ -391,7 +368,7 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
             resumes = process_resumes_in_memory(uploaded_files)
         
         if not resumes:
-            st.error("❌ No resumes parsed")
+            st.error("No resumes parsed")
             st.stop()
         
         parse_time = time.time() - start
@@ -407,10 +384,10 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
         total_time = time.time() - start
         
         # Update metrics
-        update_metrics(len(resumes), total_time, cache_stats['hits'], cache_stats['hits'] + cache_stats['misses'])
+        update_metrics(len(resumes), total_time)
         
         # Performance Summary
-        st.success("✅ Screening Complete!")
+        st.success(" Screening Complete!")
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -418,7 +395,7 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
         with col2:
             st.metric("📄 Resumes", len(resumes))
         with col3:
-            st.metric("⚡ Speed", f"{len(resumes)/total_time:.1f}/s")
+            st.metric("⚡ Speed", f"{len(resumes)/total_time:.1f}resumes/s")
 
         # AI Analysis
         st.markdown("---")
