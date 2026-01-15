@@ -19,9 +19,10 @@ Use python 3.10.14 version if running local virtual env.
 
 ## 3. Run the App :
 
-```bash 
+```bash
 rm -rf venv
-python3.10 -m venv venv
+pyenv local 3.10.14
+python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
