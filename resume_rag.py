@@ -1,7 +1,6 @@
 # ============================
 # Resume RAG Screener (DEBUGGABLE VERSION)
 # ============================
-
 import os
 import re
 import fitz
