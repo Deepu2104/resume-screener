@@ -1,5 +1,5 @@
 # ============================
-# Resume RAG Screener (PRODUCTION WITH SMART FEATURES)
+# Resume RAG Screener (DEBUGGABLE VERSION)
 # ============================
 
 import os
@@ -19,57 +19,35 @@ from groq import Groq
 import json
 from datetime import datetime
 import pandas as pd
+import time
 
+# ============================
+# DEBUG MODE
+# ============================
+DEBUG_MODE = True   # 🔥 SET FALSE FOR PRODUCTION
+
+# ============================
+# STREAMLIT CONFIG
+# ============================
 st.set_page_config(page_title="Resume RAG Screener", layout="wide", page_icon="📊")
-
-# ============================
-# METRICS TRACKING
-# ============================
-if 'metrics' not in st.session_state:
-    st.session_state.metrics = {
-        'total_resumes_processed': 0,
-        'total_screenings': 0,
-        'avg_processing_time': 0,
-        'total_candidates_ranked': 0,
-        'total_api_calls': 0,
-        'processing_times': [],
-        'hourly_throughput': 0
-    }
-
-def update_metrics(num_resumes, processing_time, total_items=1):
-    """Update performance metrics"""
-    m = st.session_state.metrics
-    m['total_resumes_processed'] += num_resumes
-    m['total_screenings'] += 1
-    m['total_candidates_ranked'] += num_resumes
-    m['processing_times'].append(processing_time)
-    
-    # Calculate averages
-    m['avg_processing_time'] = sum(m['processing_times']) / len(m['processing_times'])
-    
-    # Calculate throughput (resumes per hour)
-    # Formula: (total resumes / total time) * 3600 seconds
-    total_time = sum(m['processing_times'])
-    if total_time > 0:
-        resumes_per_second = m['total_resumes_processed'] / total_time
-        m['hourly_throughput'] = int(resumes_per_second * 3600)
-    
-
-
-st.title("📊 AI-Powered Resume Screening System")
-st.caption("Powered by RAG + Groq AI | 10x faster than manual screening")
 
 # ============================
 # LOGGING SETUP
 # ============================
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG_MODE else logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-def log(step: str):
-    logger.info(step)
+def log(step: str, request_id: str, data=None):
+    msg = f"[{request_id}] {step}"
+    if data is not None:
+        msg += f" | {data}"
+    logger.debug(msg)
 
-def log_error(step: str, e: Exception):
-    logger.error(f"{step}: {str(e)}")
+def log_error(step: str, request_id: str, e: Exception):
+    logger.error(f"[{request_id}] {step}: {str(e)}")
     logger.error(traceback.format_exc())
 
 # ============================
@@ -79,390 +57,176 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # ============================
-# EMBEDDING MODEL (CACHED)
+# EMBEDDING MODEL
 # ============================
 @st.cache_resource
 def load_embedder():
-    try:
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        log("Embedding model loaded")
-        return model
-    except Exception as e:
-        log_error("Embedding model load failed", e)
-        raise
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    logger.info("Embedding model loaded")
+    return model
 
 embedder = load_embedder()
 
 # ============================
-# GROQ CLIENT (CACHED)
+# GROQ CLIENT
 # ============================
 @st.cache_resource
 def load_groq_client():
-    try:
-        if not GROQ_API_KEY:
-            return None
-        client = Groq(api_key=GROQ_API_KEY)
-        log("Groq client initialized")
-        return client
-    except Exception as e:
-        log_error("Groq client initialization failed", e)
+    if not GROQ_API_KEY:
         return None
+    return Groq(api_key=GROQ_API_KEY)
 
 groq_client = load_groq_client()
 
 # ============================
-# HASH-BASED CACHING
+# UTILITIES
 # ============================
 def get_file_hash(file_bytes):
-    """Generate unique hash for file content"""
     return hashlib.md5(file_bytes).hexdigest()
 
+# ============================
+# PARSING
+# ============================
+def parse_resume(file_bytes, filename, request_id):
+    log("PARSE_START", request_id, filename)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(file_bytes)
+        doc = fitz.open(tmp.name)
+        text = " ".join(page.get_text() for page in doc)
+        doc.close()
+        os.unlink(tmp.name)
 
-@st.cache_data(ttl=3600)
-def parse_resume_cached(file_hash, file_bytes, filename):
-    """Cache parsed resume by file hash"""
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(file_bytes)
-            doc = fitz.open(tmp.name)
-            text = " ".join(page.get_text() for page in doc)
-            doc.close()
-            os.unlink(tmp.name)
-            
-            # Extract key information
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-            phone_match = re.search(r'[\+\(]?[1-9][0-9 .\-\(\)]{8,}[0-9]', text)
-            
-            return {
-                "filename": filename,
-                "text": re.sub(r"\s+", " ", text.strip()),
-                "hash": file_hash,
-                "email": email_match.group(0) if email_match else "Not found",
-                "phone": phone_match.group(0) if phone_match else "Not found",
-                "word_count": len(text.split())
-            }
-    except Exception as e:
-        log_error(f"Failed to parse {filename}", e)
-        return None
+    email = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+    phone = re.search(r'[\+\(]?[1-9][0-9 .\-\(\)]{8,}[0-9]', text)
 
-@st.cache_data(ttl=3600)
-def embed_text_cached(text):
-    """Cache embeddings by text content"""
-    return embedder.encode([text], show_progress_bar=False)[0].tolist()
+    parsed = {
+        "filename": filename,
+        "text": re.sub(r"\s+", " ", text.strip()),
+        "email": email.group(0) if email else "Not found",
+        "phone": phone.group(0) if phone else "Not found",
+        "word_count": len(text.split())
+    }
+
+    log("PARSE_DONE", request_id, {
+        "words": parsed["word_count"],
+        "email": parsed["email"]
+    })
+
+    return parsed
 
 # ============================
-# IN-MEMORY PROCESSING
+# EMBEDDING
 # ============================
-def process_resumes_in_memory(files):
-    """Process resumes entirely in memory"""
-    resumes = []
-    file_data = []
-    
-    for file in files:
-        file_bytes = file.read()
-        file_hash = get_file_hash(file_bytes)
-        file_data.append((file_hash, file_bytes, file.name))
-    
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [
-            executor.submit(parse_resume_cached, fh, fb, fn) 
-            for fh, fb, fn in file_data
-        ]
-        for future in futures:
-            result = future.result()
-            if result:
-                resumes.append(result)
-    
-    log(f"Processed {len(resumes)} resumes")
-    return resumes
+def embed_text(text, request_id, label):
+    vec = embedder.encode([text], show_progress_bar=False)[0]
+    log("EMBED", request_id, {
+        "label": label,
+        "dim": len(vec),
+        "preview": vec[:5].tolist()
+    })
+    return vec
 
-def rank_resumes_in_memory(jd_text, resumes):
-    """Rank resumes using embeddings + context verification"""
-    jd_embedding = np.array([embed_text_cached(jd_text)])
-    
-    resume_embeddings = []
-    for resume in resumes:
-        text_preview = resume["text"][:2000]
-        embedding = embed_text_cached(text_preview)
-        resume_embeddings.append(embedding)
-    
-    resume_embeddings = np.array(resume_embeddings)
-    similarities = cosine_similarity(jd_embedding, resume_embeddings)[0]
-    ranked_indices = np.argsort(similarities)[::-1]
-    
-    ranked_resumes = []
-    for idx in ranked_indices:
-        technical_context_score = verify_technical_context(resumes[idx]["text"])
-        
-        final_score = similarities[idx]
-        
-        ranked_resumes.append({
-            "filename": resumes[idx]["filename"],
-            "text": resumes[idx]["text"],
-            "email": resumes[idx]["email"],
-            "phone": resumes[idx]["phone"],
-            "word_count": resumes[idx]["word_count"],
-            "similarity": float(similarities[idx]),
-            "technical_context_score": technical_context_score,
-            "final_score": final_score,
-            "rank": len(ranked_resumes) + 1
+# ============================
+# RANKING
+# ============================
+def rank_resumes(jd_text, resumes, request_id):
+    jd_vec = embed_text(jd_text, request_id, "JD")
+
+    resume_vectors = []
+    for r in resumes:
+        vec = embed_text(r["text"][:2000], request_id, r["filename"])
+        resume_vectors.append(vec)
+
+    similarities = cosine_similarity([jd_vec], resume_vectors)[0]
+
+    for r, s in zip(resumes, similarities):
+        log("SIMILARITY_SCORE", request_id, {
+            "resume": r["filename"],
+            "score": float(s)
         })
-    
-    ranked_resumes.sort(key=lambda x: x['final_score'], reverse=True)
-    for i, r in enumerate(ranked_resumes):
-        r['rank'] = i + 1
-    
-    return ranked_resumes
 
-def verify_technical_context(text):
-    technical_indicators = [
-        'developer','engineer','project','built','developed','implemented',
-        'system','api','backend','frontend','database','microservice'
-    ]
-    text = text.lower()
-    return sum(1 for i in technical_indicators if i in text) / len(technical_indicators)
+    ranked = sorted(
+        zip(resumes, similarities),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    result = []
+    for i, (r, score) in enumerate(ranked, 1):
+        result.append({
+            **r,
+            "similarity": float(score),
+            "rank": i
+        })
+
+    return result
 
 # ============================
-# GROQ LLM ANALYSIS
+# LLM ANALYSIS
 # ============================
-@st.cache_data(ttl=1800, show_spinner=False)
-def analyze_with_groq_cached(jd_hash, candidates_json):
-    """Cache LLM responses"""
+def analyze_with_llm(jd_text, ranked_resumes, request_id):
     if not groq_client:
-        return " Groq API not configured"
-    
-    try:
-        st.session_state.metrics['total_api_calls'] += 1
-        candidates = json.loads(candidates_json)
-        
-        resume_block = ""
-        for i, cand in enumerate(candidates[:5], 1):
-            resume_block += f"\n\n=== CANDIDATE {i}: {cand['filename']} ===\n"
-            resume_block += f"Semantic Match: {cand['similarity']:.2%}\n"
-            resume_block += f"Resume: {cand['text'][:600]}\n"
-        
-        prompt = f"""You are a hiring assistant. Analyze these candidates concisely.
+        return "Groq not configured"
 
+    prompt = f"""
 Job Description:
-{candidates[0].get('jd_preview', '')}
+{jd_text[:1500]}
 
-{resume_block[:4000]}
-
-Provide:
-1. **Top 3 Recommendations** (one sentence each on why to interview)
-2. **Key Strengths** (bullet points)
-3. **Concerns** (if any)
-
-Be brief and actionable."""
-
-        log("Calling Groq API...")
-        chat_completion = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            max_tokens=1000,
-        )
-        
-        return chat_completion.choices[0].message.content
-        
-    except Exception as e:
-        log_error("Groq API failed", e)
-        return f" Error: {str(e)}"
-
-def analyze_candidates(jd_text, ranked_resumes):
-    """Wrapper for cached LLM analysis"""
-    jd_hash = hashlib.md5(jd_text.encode()).hexdigest()
-    
-    top_candidates = []
-    for resume in ranked_resumes[:5]:
-        top_candidates.append({
-            "filename": resume["filename"],
-            "text": resume["text"],
-            "similarity": resume["similarity"],
-            "jd_preview": jd_text[:1500]
-        })
-    
-    candidates_json = json.dumps(top_candidates, sort_keys=True)
-    return analyze_with_groq_cached(jd_hash, candidates_json)
-# ============================
-# EXPORT FEATURES
-# ============================
-def export_to_csv(ranked_resumes):
-    """Export results to CSV"""
-    df = pd.DataFrame([{
-        "Rank": r["rank"],
-        "Candidate": r["filename"],
-        "Email": r["email"],
-        "Phone": r["phone"],
-        "Semantic Match": f"{r['similarity']:.2%}",
-        "Resume Length": f"{r['word_count']} words"
-    } for r in ranked_resumes[:20]])
-    
-    return df.to_csv(index=False).encode('utf-8')
-
-# ============================
-# STREAMLIT UI
-# ============================
-
-# Sidebar
-st.sidebar.header("⚙️ System Settings")
-
-# Performance Metrics in Sidebar
-with st.sidebar.expander("📈 System Performance"):
-    st.metric("Total Screenings", st.session_state.metrics['total_screenings'])
-    st.metric("Candidates Ranked", st.session_state.metrics['total_candidates_ranked'])
-    st.metric("Throughput", f"{st.session_state.metrics['hourly_throughput']} resumes/hr")
-    st.metric("API Calls", st.session_state.metrics['total_api_calls'])
-    st.metric("Avg TIme", st.session_state.metrics['avg_processing_time'])
-    st.metric("Total Resume Processed", st.session_state.metrics['total_resumes_processed'])
-    
-    if st.button("Reset Metrics"):
-        st.session_state.metrics = {
-            'total_resumes_processed': 0,
-            'total_screenings': 0,
-            'avg_processing_time': 0,
-            'total_candidates_ranked': 0,
-            'total_api_calls': 0,
-            'processing_times': [],
-            'hourly_throughput': 0
-        }
-        st.rerun()
-
-
-# Main UI
-uploaded_files = st.file_uploader(
-    "Upload Resumes (PDF)",
-    type=["pdf"],
-    accept_multiple_files=True,
-    help="Upload multiple PDF resumes"
-)
-
-jd_text = st.text_area(
-    "Job Description", 
-    height=200,
-    placeholder="Paste complete job description...",
-)
-
-# Advanced Options
-col1, col2 = st.columns(2)
-with col1:
-    top_k = st.selectbox("Analyze Top", [3, 5, 10], index=1)
-with col2:
-    show_skill_analysis = st.checkbox("Show Skill Analysis", value=True)
-
-if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
-    if not uploaded_files or not jd_text.strip():
-        st.warning(" Upload resumes and add job description")
-        st.stop()
-    
-    if not GROQ_API_KEY:
-        st.error(" Add GROQ_API_KEY to .env")
-        st.stop()
-    
-    try:
-        import time
-        start = time.time()
-        
-        # Progress
-        with st.spinner("Processing..."):
-            resumes = process_resumes_in_memory(uploaded_files)
-        
-        if not resumes:
-            st.error("No resumes parsed")
-            st.stop()
-        
-        parse_time = time.time() - start
-        
-        with st.spinner("Ranking..."):
-            ranked_resumes = rank_resumes_in_memory(jd_text.strip(), resumes)
-        rank_time = time.time() - start - parse_time
-        
-        with st.spinner("AI analyzing..."):
-            result = analyze_candidates(jd_text.strip(), ranked_resumes[:top_k])
-        llm_time = time.time() - start - parse_time - rank_time
-        
-        total_time = time.time() - start
-        
-        # Update metrics
-        update_metrics(len(resumes), total_time)
-        
-        # Performance Summary
-        st.success(" Screening Complete!")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("⏱️ Time", f"{total_time:.1f}s")
-        with col2:
-            st.metric("📄 Resumes", len(resumes))
-        with col3:
-            st.metric("⚡ Speed", f"{len(resumes)/total_time:.1f}resumes/s")
-
-        # AI Analysis
-        st.markdown("---")
-        st.markdown("## 🤖 AI Analysis")
-        st.markdown(result)
-        
-        # Detailed Rankings
-        st.markdown("---")
-        st.markdown("## 📊 Candidate Rankings")
-        
-        for i, candidate in enumerate(ranked_resumes[:10], 1):
-            with st.expander(f"#{i} - {candidate['filename']} | Match: {candidate['similarity']:.0%}"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"**Contact:**")
-                    st.write(f"📧 {candidate['email']}")
-                    st.write(f"📱 {candidate['phone']}")
-                    st.write(f"📝 {candidate['word_count']} words")
-                
-                with col2:
-                    st.markdown(f"**Scores:**")
-                    st.write(f"Semantic Match: **{candidate['similarity']:.1%}**")
-        
-        # Export Options
-        st.markdown("---")
-        st.markdown("## 📥 Export Results")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            csv_data = export_to_csv(ranked_resumes)
-            st.download_button(
-                "📊 Download CSV",
-                csv_data,
-                file_name=f"screening_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col2:
-            report = f"""# Resume Screening Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## Performance
-- Time: {total_time:.1f}s
-- Resumes: {len(resumes)}
-- Speed: {len(resumes)/total_time:.1f} resumes/s
-
-## AI Analysis
-{result}
-
-## Top 10 Candidates
+Top Candidates:
 """
-            for r in ranked_resumes[:10]:
-                report += f"\n{r['rank']}. {r['filename']}\n"
-                report += f"   - Semantic: {r['similarity']:.1%}\n"
-                report += f"   - Contact: {r['email']} | {r['phone']}\n"
-            
-            st.download_button(
-                "📄 Download Report",
-                report,
-                file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-        
-    except Exception as e:
-        log_error("Screening failed", e)
-        st.error(f"❌ Error: {str(e)}")
+
+    for r in ranked_resumes[:5]:
+        prompt += f"\n{r['filename']} - {r['similarity']:.2%}\n{r['text'][:500]}\n"
+
+    log("LLM_PROMPT_READY", request_id, {"chars": len(prompt)})
+
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=800
+    )
+
+    log("LLM_RESPONSE_RECEIVED", request_id)
+    return response.choices[0].message.content
+
+# ============================
+# UI
+# ============================
+st.title("📊 Resume RAG Screener (Debuggable)")
+
+uploaded_files = st.file_uploader(
+    "Upload resumes (PDF)",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
+jd_text = st.text_area("Job Description", height=200)
+
+if st.button("🚀 Screen Resumes"):
+    if not uploaded_files or not jd_text.strip():
+        st.warning("Upload resumes and JD")
+        st.stop()
+
+    request_id = f"REQ-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log("REQUEST_START", request_id)
+
+    resumes = []
+    start = time.time()
+
+    # 🔥 DEBUG MODE = NO THREADING
+    for f in uploaded_files:
+        resumes.append(parse_resume(f.read(), f.name, request_id))
+
+    ranked = rank_resumes(jd_text, resumes, request_id)
+    llm_result = analyze_with_llm(jd_text, ranked, request_id)
+
+    st.success("Done")
+    st.markdown("## 🤖 AI Result")
+    st.markdown(llm_result)
+
+    st.markdown("## 📊 Rankings")
+    for r in ranked:
+        st.write(f"{r['rank']}. {r['filename']} — {r['similarity']:.1%}")
+
+    log("REQUEST_END", request_id, {"time": time.time() - start})
