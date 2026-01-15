@@ -48,7 +48,6 @@ def update_metrics(num_resumes, processing_time, cache_hits=0, total_items=1):
     
     # Calculate averages
     m['avg_processing_time'] = sum(m['processing_times']) / len(m['processing_times'])
-    m['cache_hit_rate'] = (cache_hits / total_items * 100) if total_items > 0 else 0
     
     # Calculate throughput (resumes per hour)
     # Formula: (total resumes / total time) * 3600 seconds
@@ -57,9 +56,6 @@ def update_metrics(num_resumes, processing_time, cache_hits=0, total_items=1):
         resumes_per_second = m['total_resumes_processed'] / total_time
         m['hourly_throughput'] = int(resumes_per_second * 3600)
     
-    # Estimate cost saved (vs manual screening at $50/hr)
-    manual_time_saved = num_resumes * 10 / 60  # 10 min per resume manually
-    m['cost_saved'] += manual_time_saved * 50
 
 # ============================
 # TITLE WITH METRICS BANNER
@@ -69,10 +65,7 @@ with col1:
     st.metric("📄 Resumes Processed", st.session_state.metrics['total_resumes_processed'])
 with col2:
     st.metric("⚡ Avg Time", f"{st.session_state.metrics['avg_processing_time']:.1f}s")
-with col3:
-    st.metric("🎯 Cache Hit Rate", f"{st.session_state.metrics['cache_hit_rate']:.0f}%")
-with col4:
-    st.metric("💰 Cost Saved", f"${st.session_state.metrics['cost_saved']:.0f}")
+    
 
 st.title("📊 AI-Powered Resume Screening System")
 st.caption("Powered by RAG + Groq AI | 10x faster than manual screening")
@@ -393,9 +386,6 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
         import time
         start = time.time()
         
-        cache_stats['hits'] = 0
-        cache_stats['misses'] = 0
-        
         # Progress
         with st.spinner("Processing..."):
             resumes = process_resumes_in_memory(uploaded_files)
@@ -417,7 +407,6 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
         total_time = time.time() - start
         
         # Update metrics
-        cache_hit_rate = cache_stats['hits'] / (cache_stats['hits'] + cache_stats['misses']) * 100 if (cache_stats['hits'] + cache_stats['misses']) > 0 else 0
         update_metrics(len(resumes), total_time, cache_stats['hits'], cache_stats['hits'] + cache_stats['misses'])
         
         # Performance Summary
@@ -430,9 +419,7 @@ if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
             st.metric("📄 Resumes", len(resumes))
         with col3:
             st.metric("⚡ Speed", f"{len(resumes)/total_time:.1f}/s")
-        with col4:
-            st.metric("💾 Cache", f"{cache_hit_rate:.0f}%")
-        
+
         # AI Analysis
         st.markdown("---")
         st.markdown("## 🤖 AI Analysis")
@@ -502,12 +489,3 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     except Exception as e:
         log_error("Screening failed", e)
         st.error(f"❌ Error: {str(e)}")
-
-
-
-
-
-
-
-
-
