@@ -1,7 +1,7 @@
 # Core
 streamlit==1.31.1
 python-dotenv==1.0.1
-pymupdf==1.23.8
+pymupdf==1.23.26
 numpy==1.26.4
 pandas
 scikit-learn
