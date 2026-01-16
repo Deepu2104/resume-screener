@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # 🚫 Force wheels only (no source builds)
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir --prefer-binary -r requirements.txt
+RUN pip install --upgrade pip && pip install --only-binary=:all: -r requirements.txt
 
 # Copy app
 COPY . .
