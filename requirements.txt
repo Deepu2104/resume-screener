@@ -10,7 +10,7 @@ watchdog==6.0.0
 # ML stack (LOCKED)
 torch==2.1.2
 transformers==4.36.2
-sentence-transformers==2.2.2
+sentence-transformers==2.6.1
 huggingface_hub==0.19.4
 
 # LLM
