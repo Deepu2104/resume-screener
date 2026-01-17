@@ -1,6 +1,6 @@
 # 🚀 AI-Powered Resume Screening System
 
-[![Live Demo](https://img.shields.io/badge/Live-Demo-success?style=for-the-badge&logo=streamlit)](https://resume-screener-1-bls7.onrender.com/)
+[![LiveDemo](https://img.shields.io/badge/Live-Demo-success?style=for-the-badge&logo=streamlit)](https://resume-screener-1-bls7.onrender.com/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=for-the-badge&logo=python)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
 
