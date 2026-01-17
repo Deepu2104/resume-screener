@@ -2,7 +2,7 @@ FROM python:3.10.14-slim
 
 WORKDIR /app
 
-# 🔧 REQUIRED system dependencies
+# REQUIRED system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first
 COPY requirements.txt .
 
-# 🚫 Force wheels only (no source builds)
+# Force wheels only (no source builds)
 RUN pip install --upgrade pip && pip install --only-binary=:all: -r requirements.txt
 
 # Copy app
