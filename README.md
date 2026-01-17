@@ -137,14 +137,10 @@ Visit `http://localhost:8501` 🎉
 5. **Review Results**: Get AI insights and ranked candidates
 6. **Export Data**: Download CSV or Markdown reports
 
-### Example Screenshot
+### How UI Looks ( Screenshot )
 ```
-📊 AI-Powered Resume Screening System
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Upload Resumes (PDF): [Browse Files]
-Job Description: [Text Area]
-Analyze Top: [5 ▼]
-                [🚀 Screen Resumes]
+<img width="1394" height="788" alt="Screenshot 2026-01-17 at 7 25 11 PM" src="https://github.com/user-attachments/assets/e0cc92ae-9021-4414-8e53-9ceb9fb34a69" />
+
 ```
 
 ---
