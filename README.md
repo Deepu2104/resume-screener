@@ -137,11 +137,10 @@ Visit `http://localhost:8501` 🎉
 5. **Review Results**: Get AI insights and ranked candidates
 6. **Export Data**: Download CSV or Markdown reports
 
-### How UI Looks ( Screenshot )
-```
-<img width="1394" height="788" alt="Screenshot 2026-01-17 at 7 25 11 PM" src="https://github.com/user-attachments/assets/e0cc92ae-9021-4414-8e53-9ceb9fb34a69" />
+---
 
-```
+### How UI Looks ( Screenshot )
+<img width="1394" height="788" alt="Screenshot 2026-01-17 at 7 25 11 PM" src="https://github.com/user-attachments/assets/e0cc92ae-9021-4414-8e53-9ceb9fb34a69" />
 
 ---
 
@@ -314,7 +313,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 👨‍💻 Author
 
-**Your Name**
+**Deepak Singh**
 - GitHub: [@Deepu2104](https://github.com/Deepu2104)
 - LinkedIn: [Deepak Singh](https://www.linkedin.com/in/-deepak-singhh/)
 - Email: ds1354586@gmail.com
